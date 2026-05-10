@@ -1,10 +1,12 @@
 describe("input module", function()
-    local Input
+    local Geom, Input, time
     local ffi, C
     setup(function()
         require("commonrequire")
         ffi = require("ffi")
         C = ffi.C
+        Geom = require("ui/geometry")
+        time = require("ui/time")
         require("ffi/linux_input_h")
         Input = require("device").input
     end)
@@ -252,6 +254,64 @@ Event: time 1510346969.076908, -------------- SYN_REPORT ------------
                 assert.is_equal(Input.main_finger_slot, Input.cur_slot)
                 assert.is_equal(Input.TOOL_TYPE_FINGER, Input.ev_slots[Input.pen_slot].tool)
             end)
+        end)
+    end)
+
+    describe("waitEvent timers", function()
+        it("runs expired gesture timers before polling for more input", function()
+            local old_input = Input.input
+            local old_timer_callbacks = Input.timer_callbacks
+            local old_gesture_detector = Input.gesture_detector
+            local old_gesture_adjust_hook = Input.gestureAdjustHook
+
+            local ok, err = pcall(function()
+                local wait_calls = 0
+                local callback_called = false
+
+                Input.input = {
+                    waitForEvent = function()
+                        wait_calls = wait_calls + 1
+                        return false, C.EINTR
+                    end,
+                }
+                Input.gesture_detector = {
+                    adjustGesCoordinate = function(_, ges)
+                        return ges
+                    end,
+                }
+                Input.gestureAdjustHook = function() end
+                Input.timer_callbacks = {
+                    {
+                        slot = Input.pen_slot,
+                        gesture = "hold",
+                        deadline = time.now() - time.ms(1),
+                        callback = function()
+                            callback_called = true
+                            return {
+                                ges = "hold",
+                                pos = Geom:new{ x = 10, y = 20, w = 0, h = 0 },
+                                time = time.now(),
+                            }
+                        end,
+                    },
+                }
+
+                local events = Input:waitEvent(nil, nil)
+
+                assert.is_true(callback_called)
+                assert.is_equal(0, wait_calls)
+                assert.is_equal("onGesture", events[1].handler)
+                assert.is_equal("hold", events[1].args[1].ges)
+            end)
+
+            Input.input = old_input
+            Input.timer_callbacks = old_timer_callbacks
+            Input.gesture_detector = old_gesture_detector
+            Input.gestureAdjustHook = old_gesture_adjust_hook
+
+            if not ok then
+                error(err)
+            end
         end)
     end)
 
