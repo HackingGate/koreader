@@ -255,6 +255,73 @@ Event: time 1510346969.076908, -------------- SYN_REPORT ------------
                 assert.is_equal(Input.TOOL_TYPE_FINGER, Input.ev_slots[Input.pen_slot].tool)
             end)
         end)
+
+        it("records pen pressure on routed stylus slots", function()
+            withInputState({
+                active_slots = {},
+                cur_slot = Input.pen_slot,
+                ev_slots = {
+                    [Input.pen_slot] = { slot = Input.pen_slot },
+                },
+                gesture_detector = {
+                    feedEvent = function()
+                        return {}
+                    end,
+                    adjustGesCoordinate = function(_, ges)
+                        return ges
+                    end,
+                },
+                MTSlots = {},
+                pressure_event = nil,
+                stylus_callback = nil,
+            }, function()
+                local routed_slot
+                Input:registerStylusCallback(function(_, slot)
+                    routed_slot = slot
+                    return true
+                end)
+
+                Input:handleTouchEv({
+                    type = C.EV_ABS,
+                    code = C.ABS_MT_SLOT,
+                    value = Input.pen_slot,
+                })
+                Input:handleTouchEv({
+                    type = C.EV_ABS,
+                    code = C.ABS_MT_TRACKING_ID,
+                    value = 7,
+                })
+                Input:handleTouchEv({
+                    type = C.EV_ABS,
+                    code = C.ABS_MT_TOOL_TYPE,
+                    value = Input.TOOL_TYPE_PEN,
+                })
+                Input:handleTouchEv({
+                    type = C.EV_ABS,
+                    code = C.ABS_MT_POSITION_X,
+                    value = 10,
+                })
+                Input:handleTouchEv({
+                    type = C.EV_ABS,
+                    code = C.ABS_MT_POSITION_Y,
+                    value = 20,
+                })
+                Input:handleTouchEv({
+                    type = C.EV_ABS,
+                    code = C.ABS_PRESSURE,
+                    value = 512,
+                })
+                Input:handleTouchEv({
+                    type = C.EV_SYN,
+                    code = C.SYN_REPORT,
+                    value = 0,
+                    time = { sec = 1, usec = 2 },
+                })
+
+                assert.is_not_nil(routed_slot)
+                assert.is_equal(512, routed_slot.pressure)
+            end)
+        end)
     end)
 
     describe("waitEvent timers", function()
